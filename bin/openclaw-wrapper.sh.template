@@ -1,0 +1,22 @@
+#!/bin/zsh
+set -euo pipefail
+
+MANAGER="__INSTALL_DIR__/bin/openclaw-gateway-manager.sh"
+NODE_BIN="__NODE_BIN__"
+ENTRY="__OPENCLAW_ENTRY__"
+
+if [[ "$#" -ge 2 && "$1" == "gateway" ]]; then
+  case "$2" in
+    stop)
+      exec "$MANAGER" manual-stop
+      ;;
+    start)
+      exec "$MANAGER" manual-start
+      ;;
+    restart)
+      exec "$MANAGER" manual-restart
+      ;;
+  esac
+fi
+
+exec "$NODE_BIN" "$ENTRY" "$@"

@@ -6,7 +6,8 @@
   <string>__STOP_LABEL__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__INSTALL_DIR__/bin/openclaw-schedule-stop.sh</string>
+    <string>__INSTALL_DIR__/bin/openclaw-gateway-manager.sh</string>
+    <string>scheduled-stop</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>

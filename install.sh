@@ -26,7 +26,10 @@ KEEP_AWAKE_START_HOUR="${KEEP_AWAKE_START_HOUR:-8}"
 KEEP_AWAKE_END_HOUR="${KEEP_AWAKE_END_HOUR:-24}"
 WATCHDOG_INTERVAL="${WATCHDOG_INTERVAL:-120}"
 WATCHDOG_COOLDOWN_SECONDS="${WATCHDOG_COOLDOWN_SECONDS:-180}"
+WATCHDOG_FAILURE_THRESHOLD="${WATCHDOG_FAILURE_THRESHOLD:-3}"
+WATCHDOG_PROBE_RETRY_SECONDS="${WATCHDOG_PROBE_RETRY_SECONDS:-3}"
 SCHEDULER_SKIP_LAUNCHD="${SCHEDULER_SKIP_LAUNCHD:-0}"
+INSTALL_OPENCLAW_WRAPPER="${INSTALL_OPENCLAW_WRAPPER:-0}"
 
 INSTALL_BIN_DIR="$OPENCLAW_SCHEDULER_HOME/bin"
 INSTALL_CONFIG_DIR="$OPENCLAW_SCHEDULER_HOME/config"
@@ -89,6 +92,33 @@ render_template() {
     "$src" > "$dest"
 }
 
+render_wrapper_template() {
+  local src="$1"
+  local dest="$2"
+  sed \
+    -e "s|__INSTALL_DIR__|$OPENCLAW_SCHEDULER_HOME|g" \
+    -e "s|__NODE_BIN__|$NODE_BIN|g" \
+    -e "s|__OPENCLAW_ENTRY__|$OPENCLAW_ENTRY|g" \
+    "$src" > "$dest"
+}
+
+find_openclaw_cli() {
+  if [ -n "${OPENCLAW_WRAPPER_TARGET:-}" ]; then
+    echo "$OPENCLAW_WRAPPER_TARGET"
+    return
+  fi
+  if [ -e "/opt/homebrew/bin/openclaw" ]; then
+    echo "/opt/homebrew/bin/openclaw"
+    return
+  fi
+  if command -v openclaw >/dev/null 2>&1; then
+    command -v openclaw
+    return
+  fi
+  echo "Unable to find openclaw CLI path for wrapper install" >&2
+  exit 1
+}
+
 NODE_BIN="$(find_node_bin)"
 OPENCLAW_ENTRY="$(find_openclaw_entry)"
 UID_VAL="$(id -u)"
@@ -96,11 +126,17 @@ UID_VAL="$(id -u)"
 mkdir -p "$INSTALL_BIN_DIR" "$INSTALL_CONFIG_DIR" "$INSTALL_LOG_DIR" "$INSTALL_STATE_DIR" "$LAUNCH_AGENTS_DIR"
 
 cp "$ROOT_DIR/bin/common.sh" "$INSTALL_BIN_DIR/common.sh"
+cp "$ROOT_DIR/bin/openclaw-gateway-manager.sh" "$INSTALL_BIN_DIR/openclaw-gateway-manager.sh"
 cp "$ROOT_DIR/bin/openclaw-schedule-start.sh" "$INSTALL_BIN_DIR/openclaw-schedule-start.sh"
 cp "$ROOT_DIR/bin/openclaw-schedule-stop.sh" "$INSTALL_BIN_DIR/openclaw-schedule-stop.sh"
 cp "$ROOT_DIR/bin/openclaw-watchdog.sh" "$INSTALL_BIN_DIR/openclaw-watchdog.sh"
 cp "$ROOT_DIR/bin/openclaw-keepawake-monitor.sh" "$INSTALL_BIN_DIR/openclaw-keepawake-monitor.sh"
 chmod +x "$INSTALL_BIN_DIR"/*
+
+render_wrapper_template \
+  "$ROOT_DIR/bin/openclaw-wrapper.sh.template" \
+  "$INSTALL_BIN_DIR/openclaw-wrapper.sh"
+chmod +x "$INSTALL_BIN_DIR/openclaw-wrapper.sh"
 
 cat > "$INSTALL_CONFIG_DIR/runtime.env" <<EOF
 OPENCLAW_SCHEDULER_HOME="$OPENCLAW_SCHEDULER_HOME"
@@ -115,14 +151,23 @@ OPENCLAW_GATEWAY_PORT="$OPENCLAW_GATEWAY_PORT"
 KEEP_AWAKE_START_HOUR="$KEEP_AWAKE_START_HOUR"
 KEEP_AWAKE_END_HOUR="$KEEP_AWAKE_END_HOUR"
 WATCHDOG_COOLDOWN_SECONDS="$WATCHDOG_COOLDOWN_SECONDS"
+WATCHDOG_FAILURE_THRESHOLD="$WATCHDOG_FAILURE_THRESHOLD"
+WATCHDOG_PROBE_RETRY_SECONDS="$WATCHDOG_PROBE_RETRY_SECONDS"
 WATCHDOG_LAST_RESTART_FILE="$INSTALL_STATE_DIR/watchdog-last-restart"
+WATCHDOG_FAIL_COUNT_FILE="$INSTALL_STATE_DIR/watchdog-fail-count"
+WATCHDOG_FAIL_REASON_FILE="$INSTALL_STATE_DIR/watchdog-fail-reason"
 NIGHT_STOP_FLAG="$INSTALL_STATE_DIR/schedule-night-stop"
+MANUAL_STOP_FLAG="$INSTALL_STATE_DIR/manual-stop.lock"
+OPERATING_START_HOUR="$START_HOUR"
+OPERATING_END_HOUR="$STOP_HOUR"
 SCHEDULER_START_LABEL="$SCHEDULER_START_LABEL"
 SCHEDULER_STOP_LABEL="$SCHEDULER_STOP_LABEL"
 SCHEDULER_WATCHDOG_LABEL="$SCHEDULER_WATCHDOG_LABEL"
 SCHEDULER_KEEPAWAKE_LABEL="$SCHEDULER_KEEPAWAKE_LABEL"
 WATCHDOG_PLIST="$LAUNCH_AGENTS_DIR/${SCHEDULER_WATCHDOG_LABEL}.plist"
 KEEPAWAKE_PLIST="$LAUNCH_AGENTS_DIR/${SCHEDULER_KEEPAWAKE_LABEL}.plist"
+WATCHDOG_LOG_FILE="$INSTALL_LOG_DIR/watchdog.log"
+START_GUARD_LOG_FILE="$INSTALL_LOG_DIR/start-guard.log"
 EOF
 
 render_template \
@@ -137,6 +182,16 @@ render_template \
 render_template \
   "$ROOT_DIR/launchd/ai.openclaw.scheduler.watchdog.plist.template" \
   "$LAUNCH_AGENTS_DIR/${SCHEDULER_WATCHDOG_LABEL}.plist"
+
+if [ "$INSTALL_OPENCLAW_WRAPPER" = "1" ]; then
+  OPENCLAW_WRAPPER_TARGET="$(find_openclaw_cli)"
+  OPENCLAW_WRAPPER_BACKUP="${OPENCLAW_WRAPPER_TARGET}.scheduler-backup"
+  if [ -e "$OPENCLAW_WRAPPER_TARGET" ] && [ ! -e "$OPENCLAW_WRAPPER_BACKUP" ]; then
+    mv "$OPENCLAW_WRAPPER_TARGET" "$OPENCLAW_WRAPPER_BACKUP"
+  fi
+  cp "$INSTALL_BIN_DIR/openclaw-wrapper.sh" "$OPENCLAW_WRAPPER_TARGET"
+  chmod +x "$OPENCLAW_WRAPPER_TARGET"
+fi
 
 if [ "$SCHEDULER_SKIP_LAUNCHD" != "1" ]; then
   launchctl bootout "gui/${UID_VAL}/${SCHEDULER_START_LABEL}" >/dev/null 2>&1 || true
@@ -153,6 +208,9 @@ fi
 echo "Installed OpenClaw Mac Scheduler"
 echo "Install dir: $OPENCLAW_SCHEDULER_HOME"
 echo "Runtime env: $INSTALL_CONFIG_DIR/runtime.env"
+if [ "$INSTALL_OPENCLAW_WRAPPER" = "1" ]; then
+  echo "Installed openclaw wrapper: $OPENCLAW_WRAPPER_TARGET"
+fi
 if [ "$SCHEDULER_SKIP_LAUNCHD" = "1" ]; then
   echo "LaunchAgents were rendered but not loaded"
 fi

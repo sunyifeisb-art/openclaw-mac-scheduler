@@ -10,7 +10,8 @@
   <integer>93001</integer>
   <key>ProgramArguments</key>
   <array>
-    <string>__INSTALL_DIR__/bin/openclaw-watchdog.sh</string>
+    <string>__INSTALL_DIR__/bin/openclaw-gateway-manager.sh</string>
+    <string>watchdog</string>
   </array>
   <key>StandardOutPath</key>
   <string>__INSTALL_DIR__/logs/watchdog.out.log</string>

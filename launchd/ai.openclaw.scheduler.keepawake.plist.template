@@ -6,7 +6,8 @@
   <string>__KEEPAWAKE_LABEL__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__INSTALL_DIR__/bin/openclaw-keepawake-monitor.sh</string>
+    <string>__INSTALL_DIR__/bin/openclaw-gateway-manager.sh</string>
+    <string>keepawake-monitor</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

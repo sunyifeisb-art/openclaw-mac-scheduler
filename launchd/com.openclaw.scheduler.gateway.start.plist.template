@@ -6,7 +6,8 @@
   <string>__START_LABEL__</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__INSTALL_DIR__/bin/openclaw-schedule-start.sh</string>
+    <string>__INSTALL_DIR__/bin/openclaw-gateway-manager.sh</string>
+    <string>scheduled-start</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>
